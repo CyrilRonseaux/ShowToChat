@@ -2,40 +2,14 @@ var ShowToChatScript = ShowToChatScript || (function() {
   'use strict';
 
   // ---------------------------------------------
-  // INNER CLASSES
-  // ---------------------------------------------
-  var DataToShow = function(n, a, t, g)
-  {
-    this.name = n;
-    this.avatar = a;
-    this.text = t;
-    this.gmnotes = g;
-
-    function getHtml()
-    {
-      var fullHtml = "";
-      // for characters, I received "null" (string) instead of null (empty/undefined)
-      // so in case, I remove them all!
-      if (this.name && 'null' != this.name) {
-        fullHtml +=  `<div style="box-shadow: 3px 3px 2px #888888; font-family: Verdana; text-shadow: 2px 2px #000; text-align: center; vertical-align: middle; padding: 1px 1px; margin-top: 0.1em; border: 1px solid #000; border-radius: 8px 8px 8px 8px; color: #FFFFFF; background-color:#666666;">${this.name}</div>`;
-      }
-      if (this.avatar && 'null' != this.avatar) {
-        fullHtml += `<div style="box-shadow: 3px 3px 2px #888888; text-align: center; vertical-align: middle; padding: 1px 1px; margin-top: 0.1em; border: 1px solid #000; color: #FFFFFF; background-color:#ffffff;"><img src="${this.avatar}" /></div>`;
-      }
-      if (this.text && 'null' != this.text) {
-          fullHtml +=  `<div style="box-shadow: 3px 3px 2px #888888; padding: 1px 1px; margin-top: 0.1em; border: 1px solid #000; background-color:#ffffff;">${this.text}</div>`;
-      }
-      if (this.gmnotes && 'null' != this.gmnotes) {
-          fullHtml +=  `<div style="box-shadow: 3px 3px 2px #888888; padding: 1px 1px; margin-top: 0.1em; border: 1px solid #000; background-color:#dddddd;">${this.gmnotes}</div>`;
-      }
-      fullHtml = `<div class="handout2chat">${fullHtml}</div>`;
-      return fullHtml;
-    }
-  };
-
-  // ---------------------------------------------
   // PUBLIC
   // ---------------------------------------------
+  const AVATAR = 1;
+  const NAME = 2;
+  const TEXT = 4;
+  const GMNOTES = 8;
+  const ALL = AVATAR | NAME | TEXT | GMNOTES;
+
   function registerEventHandlers()
 	{
 		apicmd.on(
@@ -59,39 +33,45 @@ var ShowToChatScript = ShowToChatScript || (function() {
 		);
   }
 
-  function showToPlayers(sendFrom, name, avatar, notes)
+  function showToPlayers(sendFrom, data, what = NAME | AVATAR | TEXT)
   {
-    var fullHtml = _createHtmlMessage(name, avatar, notes);
+    var fullHtml = data.getHtml(what);
     var fromName = _getPlayerName(sendFrom);
 
     sendChat(fromName, `${fullHtml}`);
   }
 
-  function whisperToPlayer(sendFrom, sendTo, data)
+  function whisperToPlayer(sendFrom, sendTo, data, what = ALL)
   {
-    var fullHtml = data.getHtml();
+    var fullHtml = data.getHtml(what);
     var fromName = _getPlayerName(sendFrom);
     var toName = _getPlayerName(sendTo);
 
     sendChat(fromName, `/w "${toName}" ${fullHtml}`);
   }
 
+  function whisperToPlayers(sendFrom, targetPlayers, data, what =  NAME | AVATAR | TEXT)
+  {
+    targetPlayers.forEach(function (p) {
+      log('whisper to' + p);
+      whisperToPlayer(sendFrom, p, data, what);
+    });
+  }
+
   // ---------------------------------------------
   // PRIVATE
   // ---------------------------------------------
+
   function _handleShowPicture(argv, msg)
   {
-    var obj = new DataToShow("name", "avatar", "text");
-    var html = obj.getHtml();
-    log (html);
-
-
     if (!argv.opts.players) {
+
       // players not given
-      // Use the selected tokens to pic a player list
+      // Use the selected tokens as player list
       // And display a "select token" button to the chat.
 
     } else {
+
       var players = [];
       if ("all" == argv.opts.players) {
         // show selected tokens to all players
@@ -107,15 +87,58 @@ var ShowToChatScript = ShowToChatScript || (function() {
               character = getObj('character', represents);
             }
             if (character) {
-              _showCharacterToPlayer(msg.playerid, null, character);
+              _collectCharacter(character, function(data) {
+                showToPlayers(msg.playerid, data);
+              });
             } else {
-              _showTokenToPlayer(msg.playerid, null, token);
+              _collectToken(token, function(data) {
+                showToPlayers(msg.playerid, data);
+              });
             }
-          }
-        );
+          });
 
       } else {
+
         // show to specific list of players
+        var playerNames = argv.opts.players.split(',');
+        var playerIds = [];
+        playerNames.forEach( function(nameOrId) {
+          if (nameOrId.startsWith("-")) { // Id
+            playerIds.push(nameOrId);
+          } else {
+            var id = _getPlayerIdFromName(nameOrId);
+            if (id) {
+              playerIds.push(id);
+            } else {
+              sendChat('api', `Player ${nameOrId} not found.`);
+            }
+          }
+        });
+
+        log(' players after compact ' + playerIds + ' → ' + playerIds.length);
+
+        _.chain(msg.selected)
+          .map(function(o) {
+            return getObj('graphic',o._id);
+          })
+          .compact()
+          .each(function(token) {
+            var character = null;
+            var represents = token.get('represents');
+            if (represents) {
+              character = getObj('character', represents);
+            }
+            if (character) {
+              _collectCharacter(character, function(data) {
+                whisperToPlayers(msg.playerid, playerIds, data);
+              });
+            } else {
+              _collectToken(token, function(data) {
+                whisperToPlayers(msg.playerid, playerIds, data);
+              });
+            }
+          });
+
       }
     }
   }
@@ -199,50 +222,10 @@ var ShowToChatScript = ShowToChatScript || (function() {
       notes = returnedNotes;
       character.get('gmnotes', function(returnedGmnotes) {
         gmnotes = returnedGmnotes;
-        let characterData = new ObjectData(name, avatar, notes, gmnotes);
+        let characterData = new DataToShow(name, avatar, notes, gmnotes);
         callback(characterData);
       });
     });
-  }
-
-  function _showHandoutToPlayer(sendFrom, sendTo, handout)
-  {
-    var name = handout.get('name');
-    var avatar = handout.get('avatar');
-    var textProperty = playerIsGM(sendTo)?'gmnotes':'notes';
-    handout.get(textProperty, function(notes) {
-      ShowToChatScript.whisperToPlayer(sendFrom, sendTo, name, avatar, notes);
-    });
-  }
-
-  function _showTokenToPlayer(sendFrom, sendTo, token)
-  {
-    var avatar = token.get('imgsrc');
-    var name = token.get('name');
-    if (playerIsGM(sendTo)) {
-      // for some reason, on tokens, gmnotes are not asynchronous.
-      var notes = token.get('gmnotes');
-      // but they are url encoded!
-      notes = unescape(notes);
-      ShowToChatScript.whisperToPlayer(sendFrom, sendTo, name, avatar, notes);
-    } else {
-      ShowToChatScript.whisperToPlayer(sendFrom, sendTo, name, avatar, null);
-    }
-  }
-
-  function _showCharacterToPlayer(sendFrom, sendTo, character)
-  {
-    var avatar = character.get('avatar');
-    var name = character.get('name');
-    if (playerIsGM(sendTo)) {
-      character.get('gmnotes', function(notes) {
-        ShowToChatScript.whisperToPlayer(sendFrom, sendTo, name, avatar, notes);
-      });
-    } else {
-      character.get('bio', function(notes) {
-        ShowToChatScript.whisperToPlayer(sendFrom, sendTo, name, avatar, notes);
-      });
-    }
   }
 
   function _getPlayerName(playerid)
@@ -257,28 +240,25 @@ var ShowToChatScript = ShowToChatScript || (function() {
     return player.get('_displayname');
   }
 
-  function _createHtmlMessage(name, avatar, notes)
-  {
-    var fullHtml = "";
-    // for characters, I received "null" (string) instead of null (empty/undefined)
-    // so in case, I remove them all!
-    if (name && 'null' != name) {
-      fullHtml +=  `<div style="box-shadow: 3px 3px 2px #888888; font-family: Verdana; text-shadow: 2px 2px #000; text-align: center; vertical-align: middle; padding: 1px 1px; margin-top: 0.1em; border: 1px solid #000; border-radius: 8px 8px 8px 8px; color: #FFFFFF; background-color:#666666;">${name}</div>`;
-    }
-    if (avatar && 'null' != avatar) {
-      fullHtml += `<div style="box-shadow: 3px 3px 2px #888888; text-align: center; vertical-align: middle; padding: 1px 1px; margin-top: 0.1em; border: 1px solid #000; color: #FFFFFF; background-color:#ffffff;"><img src="${avatar}" /></div>`;
-    }
-    if (notes && 'null' != notes) {
-        fullHtml +=  `<div style="box-shadow: 3px 3px 2px #888888; padding: 1px 1px; margin-top: 0.1em; border: 1px solid #000; background-color:#ffffff;">${notes}</div>`;
-    }
-    fullHtml = `<div class="handout2chat">${fullHtml}</div>`;
-    return fullHtml;
-  }
+  function _getPlayerIdFromName(name)
+	{
+		var players = null;
+		players = findObjs({
+ 			_type: "player",
+ 			_displayname: name
+ 		});
+
+		if (!players || !players[0]) {
+      log ('found null');
+			return null;
+		}
+		return players[0].get('_id');
+	}
 
   function _getHandoutByName(name)
   {
     var results = findObjs({
-      _type: "handout",
+      _type: 'handout',
       _name: name
     });
     if (!results) {
@@ -287,6 +267,38 @@ var ShowToChatScript = ShowToChatScript || (function() {
     return results[0];
   }
 
+
+  // ---------------------------------------------
+  // INNER CLASSES
+  // ---------------------------------------------
+  var DataToShow = function(n, a, t, g)
+  {
+    this.name = n;
+    this.avatar = a;
+    this.text = t;
+    this.gmnotes = g;
+
+    this.getHtml = function(what = ALL)
+    {
+      var fullHtml = "";
+      // for characters, I received "null" (string) instead of null (empty/undefined)
+      // so in case, I remove them all!
+      if (this.name && 'null' != this.name && (what & NAME) ) {
+        fullHtml +=  `<div style="box-shadow: 3px 3px 2px #888888; font-family: Verdana; text-shadow: 2px 2px #000; text-align: center; vertical-align: middle; padding: 1px 1px; margin-top: 0.1em; border: 1px solid #000; border-radius: 8px 8px 8px 8px; color: #ffffff; background-color:#666666;">${this.name}</div>`;
+      }
+      if (this.avatar && 'null' != this.avatar && (what & AVATAR) ) {
+        fullHtml += `<div style="box-shadow: 3px 3px 2px #888888; text-align: center; vertical-align: middle; padding: 1px 1px; margin-top: 0.1em; border: 1px solid #000; color: #ffffff; background-color:#ffffff;"><img src="${this.avatar}" /></div>`;
+      }
+      if (this.text && 'null' != this.text && (what & TEXT) ) {
+          fullHtml +=  `<div style="box-shadow: 3px 3px 2px #888888; padding: 1px 1px; margin-top: 0.1em; border: 1px solid #000; background-color:#ffffff;">${this.text}</div>`;
+      }
+      if (this.gmnotes && 'null' != this.gmnotes  && (what & GMNOTES) ) {
+          fullHtml +=  `<div style="box-shadow: 3px 3px 2px #888888; padding: 1px 1px; margin-top: 0.1em; border: 1px solid #000; background-color:#dddddd;">${this.gmnotes}</div>`;
+      }
+      fullHtml = `<div class="handout2chat">${fullHtml}</div>`;
+      return fullHtml;
+    }
+  };
 
   // ---------------------------------------------
   // INTERFACE
