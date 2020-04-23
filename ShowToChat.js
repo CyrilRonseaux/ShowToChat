@@ -88,11 +88,11 @@ var ShowToChatScript = ShowToChatScript || (function() {
             }
             if (character) {
               _collectCharacter(character, function(data) {
-                showToPlayers(msg.playerid, data);
+                showToPlayers(msg.playerid, data, NAME | AVATAR);
               });
             } else {
               _collectToken(token, function(data) {
-                showToPlayers(msg.playerid, data);
+                showToPlayers(msg.playerid, data, NAME | AVATAR);
               });
             }
           });
@@ -130,11 +130,11 @@ var ShowToChatScript = ShowToChatScript || (function() {
             }
             if (character) {
               _collectCharacter(character, function(data) {
-                whisperToPlayers(msg.playerid, playerIds, data);
+                whisperToPlayers(msg.playerid, playerIds, data, NAME | AVATAR);
               });
             } else {
               _collectToken(token, function(data) {
-                whisperToPlayers(msg.playerid, playerIds, data);
+                whisperToPlayers(msg.playerid, playerIds, data, NAME | AVATAR);
               });
             }
           });
