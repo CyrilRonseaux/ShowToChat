@@ -31,6 +31,8 @@ var ShowToChatScript = ShowToChatScript || (function() {
 			],
 			_handleShowPicture
 		);
+
+    log("-=> Show To Chat Script started.");
   }
 
   function showToPlayers(sendFrom, data, what = NAME | AVATAR | TEXT)
@@ -53,7 +55,6 @@ var ShowToChatScript = ShowToChatScript || (function() {
   function whisperToPlayers(sendFrom, targetPlayers, data, what =  NAME | AVATAR | TEXT)
   {
     targetPlayers.forEach(function (p) {
-      log('whisper to' + p);
       whisperToPlayer(sendFrom, p, data, what);
     });
   }
@@ -74,6 +75,11 @@ var ShowToChatScript = ShowToChatScript || (function() {
 
       var players = [];
       if ("all" == argv.opts.players) {
+        if (!msg.selected || 0 == msg.selected.length) {
+          sendChat("api", "/w gm You need to select something to show to all players.");
+          return;
+        }
+
         // show selected tokens to all players
         _.chain(msg.selected)
           .map(function(o) {
@@ -114,8 +120,6 @@ var ShowToChatScript = ShowToChatScript || (function() {
             }
           }
         });
-
-        log(' players after compact ' + playerIds + ' → ' + playerIds.length);
 
         _.chain(msg.selected)
           .map(function(o) {
@@ -249,7 +253,6 @@ var ShowToChatScript = ShowToChatScript || (function() {
  		});
 
 		if (!players || !players[0]) {
-      log ('found null');
 			return null;
 		}
 		return players[0].get('_id');
