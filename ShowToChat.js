@@ -206,7 +206,7 @@ var ShowToChatScript = ShowToChatScript || (function() {
   function _collectToken(token, callback)
   {
     var name = token.get('name');
-    var avatar = token.get('avatar');
+    var avatar = token.get('imgsrc');
     var notes = null; // tokens have no public "notes" of their own.
     // for some reason, on tokens, gmnotes are not asynchronous.
     var gmnotes = token.get('gmnotes');
